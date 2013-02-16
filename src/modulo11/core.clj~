@@ -1,0 +1,149 @@
+;; ##Berechnung und Überprüfung von Buchungszeichen:
+;;
+;; #Kommandos für die REPL
+;; `(folgendes x)`
+;;  `x` als `String` : das Buchungszeichen
+;;  Berechne das auf `x` folgende Buchungszeichen
+;;
+;; `(folgendes x n)`
+;; `x` als `String`  : das Buchungszeichen
+;; `n` als `Integer` : Anzahl der zu berechnenden Buchungszeichen
+;;  Berechne die `n` nachfolgende Buchungszeichen von `x`
+;;
+;; `(teste x)`
+;; `x` als `String`  : das Buchungsteichen
+;; Überprüfe das Buchungszeichen `x`
+
+
+(ns modulo11.core
+(:require (clojure [string :as str]))
+  (:import
+   (java.io File)))
+
+(declare folgendes
+         next-bz
+         teste
+         check-bz
+         create-ag
+         validate-string
+         validate-number
+         validate-path
+         without-checksum
+         calc-checksum
+         multiplicator-list
+         number-list
+         add-points
+         format-to-csv)
+
+;; Multiplikatoren für die Berechnung der Prüfziffer
+(def multiplicator-list  
+  (list 6 5 4 3 2 7 6 5 4 3 2))
+
+(defn next-bz
+  "Ermittlung der folgenden Buchungszeichen (Interne Funktion)"
+  ([^String x]
+  (next-bz x 1))
+  ([^String x ^Integer n]
+  (if (and (validate-string x) (validate-number n))
+    (loop [bz x 
+           counter n 
+           bz-list ""] 
+        (if (> counter 0)
+          (recur (create-ag bz) (- counter 1) (str bz-list (create-ag bz) "\n"))
+          (add-points bz-list)))
+    "ERROR")))
+
+(defn folgendes
+"Erstelle Liste mit einem oder mehreren Buchungszeichen" 
+  ([^String x]
+  (folgendes x 1))
+  ([^String x ^Integer n]
+  (let [retval (next-bz x n)]
+    (if (not(= retval "ERROR"))
+      (println "\n Buchungszeichenliste\n" "====================\n" retval)
+      (println "Eingabe ungueltig!"))))  
+  ([^String x ^Integer n ^String p]
+  (let [retval (next-bz x n)]
+    (if (and (not (= retval "ERROR")) (validate-path p))
+      (spit (File. (str p "buchungszeichenliste.csv")) retval)
+      (println "Eingabe ungueltig!")))))
+
+(defn check-bz
+  "Überprüfung der Prüfziffer (interne Funktion)"
+  [^String x]
+  (if (validate-string x)
+    (let [checked (str (calc-checksum (without-checksum x)))]
+      (if (= (str (last x)) checked) true false))
+    false))
+
+(defn teste 
+  "Ueberpruefung der Pruefzimmmer"
+  [^String x]
+  (if (validate-string x)
+    (if (check-bz x)
+      (println "Buchungszeichen korrekt")
+      (println "Buchungszeichen oder Pruefziffer falsch (richtige Pruefziffer: "
+               (str (calc-checksum (without-checksum x))) " )"))
+    (println "Eingabe ungueltig (bei Trennpunkten deren Position beachten)!")))
+
+(defn create-ag 
+"Berechnung des naechsten Buchungszeichens"
+  [input]
+  (let [val (inc (without-checksum input))]
+    (str val (calc-checksum val))))
+
+(defn validate-string
+"Ueberpruefe Buchungszeichen-String"
+  [x]
+  (if (re-find #"\." x) 
+    (if (re-matches #"\d\.\d{4}\.\d{6}\.\d" x) true false)
+    (if (re-matches #"\d{12}" x) true false)))
+
+(defn validate-number
+  "Überprüfung, ob Eingabe numerisch."
+  [x]
+  (if (= (type x) java.lang.Integer)
+    true
+    false))
+
+(defn validate-path
+  "Überprüfung, ob valider Dateipfad"
+  [p]
+  (.isDirectory (File. p)))
+
+
+(defn without-checksum
+"Entfernt die Trennungspunkte und das Buchungszeichen als 11-stellige
+Ganzzahl vom Typ 'Long' zurück"  
+  [x]
+  (Long/parseLong (apply str (butlast (str/replace x #"\." "")))))
+
+
+(defn calc-checksum
+  "Berechnung der Prüfnummer"
+  [i]
+  (let [r (mod (reduce + (map * (number-list i) multiplicator-list)) 11)]
+    (if (> (- 11 r) 9) 
+      0 
+      (- 11 r))))
+
+(defn number-list
+  "Wandelt `String` in eine Nummernliste um"
+  [x]
+  (map #(Integer/parseInt (str %)) (seq (str x))))
+
+(defn add-points
+  "Buchungszeichen-Liste mit Trennpunkten versehen"
+  [x]
+  (let [s-seq     (re-seq #"[^\n]++" x)
+        fn-points (fn [x] (str (subs x 0 1)
+                               "."
+                               (subs x 1 5)
+                               "."
+                               (subs x 5 11)
+                               "."
+                               (subs x 11 12)))]
+    (reduce str (interpose "\n" (map fn-points s-seq)))))
+
+
+
